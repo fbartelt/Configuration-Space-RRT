@@ -1,0 +1,1708 @@
+<canvas id="scene" width="800" height="600"></canvas>
+ <script type="module">import { Object3D, Vector3, BoxBufferGeometry, Color, Mesh, MeshBasicMaterial, PerspectiveCamera,
+Scene, WebGLRenderer, AmbientLight, DirectionalLight, HemisphereLight, MeshStandardMaterial,
+AxesHelper, GridHelper, Matrix4, SphereBufferGeometry, CylinderBufferGeometry, Group, LoadingManager, MeshPhysicalMaterial, Vector2, FrontSide,
+	BackSide, DoubleSide, PMREMGenerator, TextureLoader, PointLight, UVMapping, CubeReflectionMapping, CubeRefractionMapping,
+	EquirectangularReflectionMapping, EquirectangularRefractionMapping, CubeUVReflectionMapping,
+	CubeUVRefractionMapping, RepeatWrapping, ClampToEdgeWrapping, MirroredRepeatWrapping,
+	NearestFilter, LinearFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter, LinearMipmapNearestFilter,
+	LinearMipmapLinearFilter
+} from 'https://cdn.skypack.dev/three@0.135.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.skypack.dev/three@0.135.0/examples/jsm/controls/OrbitControls.js';
+import {OBJLoader} from 'https://cdn.skypack.dev/three@0.135.0/examples/jsm/loaders/OBJLoader.js';
+
+//0.126.1 0.137.5
+import { RoomEnvironment } from 'https://unpkg.com/three@0.126.1/examples/jsm/environments/RoomEnvironment.js';
+
+//--------------------SIMULATION ELEMENTS---------------------
+
+const var_multiplier = 1; 
+ const delay = 2000; 
+ //SIMULATION PARAMETERS GO HERE
+
+function elapsedMs()
+{
+	return (new Date()).getTime();
+}
+
+
+class Objsim{
+	constructor(_frames){
+		this.frames = _frames;
+		this.currentFrame = 0;
+		this.shape = "I HAVE NO SHAPE YET";
+	}
+
+	hasLoaded()
+	{
+		return true;
+	}
+
+	nextFrame(){
+		var currentFrameTime =  this.frames[this.currentFrame][16]
+		while( ( 1000 * currentFrameTime + delay < var_multiplier * (elapsedMs() - startMs)) && (this.currentFrame < this.frames.length-1) )
+		{
+			this.currentFrame = this.currentFrame + 1;
+			currentFrameTime =  this.frames[this.currentFrame][16]
+		}
+
+
+		this.shape.matrix.set( this.frames[this.currentFrame][ 0],this.frames[this.currentFrame][ 1],this.frames[this.currentFrame][ 2],this.frames[this.currentFrame][ 3],
+							   this.frames[this.currentFrame][ 4],this.frames[this.currentFrame][ 5],this.frames[this.currentFrame][ 6],this.frames[this.currentFrame][ 7],
+							   this.frames[this.currentFrame][ 8],this.frames[this.currentFrame][ 9],this.frames[this.currentFrame][10],this.frames[this.currentFrame][11],
+							   this.frames[this.currentFrame][12],this.frames[this.currentFrame][13],this.frames[this.currentFrame][14],this.frames[this.currentFrame][15]);
+
+
+	}
+}
+
+class Box extends Objsim{
+	constructor(_name, _width, _height, _depth, _frames, _material){
+		super(_frames);
+		this.width = _width;
+		this.height = _height;
+		this.depth = _depth;
+		const geometry = new BoxBufferGeometry( this.width, this.height, this.depth);
+		const cube = new Mesh( geometry, _material );
+		cube.name = _name;
+		cube.matrixAutoUpdate = false;
+		this.shape = cube;
+	}
+}
+
+class Ball extends Objsim{
+	constructor(_name, _radius, _frames, _material){
+		super(_frames);
+		this.radius = _radius;
+		const geometry = new SphereBufferGeometry( this.radius, 64, 32);
+		const sphere = new Mesh( geometry, _material);
+		sphere.name = _name;
+		sphere.matrixAutoUpdate = false;
+		this.shape = sphere;
+	}
+}
+
+class Cylinder extends Objsim{
+	constructor(_name, _radius, _height, _frames, _material){
+		super(_frames);
+		this.radius = _radius;
+		this.height = _height;
+		const geometry = new CylinderBufferGeometry( this.radius, this.radius, this.height, 20 );
+		const cylinder = new Mesh( geometry, _material);
+		cylinder.name = _name;
+		cylinder.matrixAutoUpdate = false;
+		this.shape = cylinder;
+	}
+}
+
+class Robot extends Objsim{
+
+
+	constructor(_objBase, _link, _frames){
+		super(_frames);
+
+		this.loadedObjs = 0
+		this.totalNumberOfObjects = _link.length+1
+		this.links = _link;
+
+		//Function that creates a generic robot
+		const base = new Group();
+		base.name = "base";
+
+		//Create link groups
+		let linkGroupList = [];
+
+		const linkGroup = new Group();
+		const axesHelper = new AxesHelper(0.2);
+
+		axesHelper.matrixAutoUpdate = false;
+		linkGroup.add(axesHelper)
+		linkGroup.name = "link0";
+
+		linkGroupList.push(linkGroup);
+
+		for (let i = 0; i < this.links.length; i++) {
+
+			const linkGroup = new Group();
+			const axesHelper = new AxesHelper(0.2);
+
+			axesHelper.matrixAutoUpdate = false;
+			linkGroup.add(axesHelper)
+			linkGroup.name = "link" + (i+1).toString();
+
+			linkGroup.rotateZ(this.links[i].theta);
+			linkGroup.translateZ(this.links[i].d);
+			linkGroup.rotateX(this.links[i].alpha);
+			linkGroup.translateX(this.links[i].a);
+
+			linkGroup.updateMatrix();
+
+			linkGroupList.push(linkGroup);
+		}
+
+		base.add(linkGroupList[0])
+
+		for (let i = 0; i < this.links.length; i++) {
+			linkGroupList[i].add(linkGroupList[i + 1])
+		}
+
+
+		//Load 3D models
+
+		this.delta_config = []
+
+		this.loadObj(_objBase,"base", "base", false)
+		for (let i = 0; i < this.links.length-1; i++) {
+			this.loadObj(this.links[i].model3d,"link" + (i+1).toString(), "link" + (i).toString(), false)
+		}
+		this.loadObj(this.links[this.links.length-1].model3d,"link" + (this.links.length).toString(), "link" + (this.links.length).toString(), true)
+
+		this.shape = base;
+		this.shape.matrixAutoUpdate = false;
+
+		for (let i = 0; i < this.links.length; i++) {
+			if(this.links[i].jointType == 0)
+			{
+				this.delta_config.push(this.shape.getObjectByName("link" + (i).toString()).rotation.z)
+			}
+			if(this.links[i].jointType == 1)
+			{
+				this.delta_config.push(this.shape.getObjectByName("link" + (i).toString()).position.z)
+			}
+		}
+	}
+
+	loadObj(obj, name1, name2, axisVisible) {
+		const manager = new LoadingManager();
+		const objLoader = new OBJLoader(manager);
+		objLoader.load(obj.url, (root) => {
+			root.scale.set(obj.scale, obj.scale, obj.scale);
+			root.applyMatrix4(obj.matrix)
+
+			root.traverse(function (child) {
+				if (child instanceof Mesh) {
+					child.material = obj.mesh_material;
+				}
+			});
+
+
+			this.shape.getObjectByName(name1).getObjectByProperty("type", "AxesHelper").visible = axisVisible;
+			this.shape.getObjectByName(name2).add(root);
+			this.loadedObjs += 1
+		});
+	}
+
+	hasLoaded()
+	{
+		return this.loadedObjs == this.totalNumberOfObjects;
+	}
+
+	//Function that updates frames
+	nextFrame(){
+
+		var currentFrameTime =  this.frames[this.currentFrame][17]
+		while( ( 1000 * currentFrameTime + delay < var_multiplier * (elapsedMs() - startMs)) && (this.currentFrame < this.frames.length-1) )
+		{
+			this.currentFrame = this.currentFrame + 1;
+			currentFrameTime =  this.frames[this.currentFrame][17]
+		}
+
+
+		//setting robot position
+		this.shape.matrix.set( this.frames[this.currentFrame][ 0],this.frames[this.currentFrame][ 1],this.frames[this.currentFrame][ 2],this.frames[this.currentFrame][ 3],
+							   this.frames[this.currentFrame][ 4],this.frames[this.currentFrame][ 5],this.frames[this.currentFrame][ 6],this.frames[this.currentFrame][ 7],
+							   this.frames[this.currentFrame][ 8],this.frames[this.currentFrame][ 9],this.frames[this.currentFrame][10],this.frames[this.currentFrame][11],
+							   this.frames[this.currentFrame][12],this.frames[this.currentFrame][13],this.frames[this.currentFrame][14],this.frames[this.currentFrame][15]);
+		//setting robot configuration
+
+		if(this.frames[this.currentFrame][16] != undefined){
+			let linkName = "";
+
+			for(let i = 0; i < this.links.length; i++){
+				linkName = "link" + (i).toString();
+
+				if(this.links[i].jointType == 0){
+					this.shape.getObjectByName(linkName).rotation.z = this.frames[this.currentFrame][16][i] + this.delta_config[i];
+				}else if (this.links[i].jointType == 1){
+					this.shape.getObjectByName(linkName).position.z = this.frames[this.currentFrame][16][i] + this.delta_config[i];
+				}
+			}
+		}
+
+
+	}
+}
+
+//------------------------------------------------------------
+
+//--------------- BASIC ELEMENTS OF ANY SCENE ----------------
+Object3D.DefaultUp = new Vector3(0,0,1); //Pointing Z axis up
+const canvas = document.querySelector('#scene');// Selecting canvas
+
+const scene = new Scene();//Instantiate the Scene
+
+scene.background = new Color('white');//Set background color
+const camera = new PerspectiveCamera(35, canvas.clientWidth/canvas.clientHeight, 0.1, 100);//Instantiate a camera
+camera.position.set(4, 4, 3);//Put camera in its place
+var ambientLight = new HemisphereLight('white','darkslategrey', 3);//Instantiate Ambient light
+const controls = new OrbitControls(camera, canvas);	//Instantiate orbit controls
+controls.target.set(0, 0, 0);//Point camera at the origin
+const renderer = new WebGLRenderer({canvas, antialias: true});//Instantiate renderer
+renderer.physicallyCorrectLights = true;//Enable physically Correct Lights
+renderer.setSize(canvas.clientWidth, canvas.clientHeight);//Set render size
+renderer.setPixelRatio(window.devicePixelRatio);//Set pixel ratio
+
+
+
+let sceneElements = [];
+const axesHelper = new AxesHelper( 0.5 ); //Create axis helper
+axesHelper.renderOrder = 1;
+const gridHelper = new GridHelper( 3, 6);//Create grid helper
+gridHelper.rotation.x = 3.14/2;
+
+scene.add(ambientLight);
+scene.add( axesHelper );
+scene.add( gridHelper );
+//------------------------------------------------------------
+
+//--------------- ADDING ELEMENTS TO THIS SCENE ---------------
+ambientLight.intensity = 12;
+ //BEGIN DECLARATION OF THE ROBOT 'robotA'
+
+const material_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#242526",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_robotA = new Matrix4(); 
+htm_robotA.set(-0.9999987317275395,-1.2682720583256946e-06,0.0015926524115072898,0.0,0.0015926529164868282,-0.0007963257007740266,0.9999984146597762,0.0,0.0,0.9999996829318346,0.0007963267107332633,0.0,0.0,0.0,0.0,1.0);
+const object3d_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Base.obj',
+scale: 0.001,
+matrix: htm_robotA,
+mesh_material: material_robotA};
+
+const list_links_robotA = [];
+
+const material_link_0_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#df6c25",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_link_0_robotA = new Matrix4(); 
+htm_link_0_robotA.set(1.0,0.0,0.0,0.0,0.0,0.0007963267107332633,-0.9999996829318346,0.0,0.0,0.9999996829318346,0.0007963267107332633,0.203,0.0,0.0,0.0,1.0);
+const object3d_link_0_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Axis1.obj',
+scale: 0.001,
+matrix: htm_link_0_robotA,
+mesh_material: material_link_0_robotA};
+
+const link_0_robotA = {
+theta: 0, 
+d: 0.335, 
+a: 0.075, 
+alpha: -1.57, 
+jointType: 0.0, 
+model3d: object3d_link_0_robotA}; 
+ 
+list_links_robotA.push(link_0_robotA);
+
+const material_link_1_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#df6c25",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_link_1_robotA = new Matrix4(); 
+htm_link_1_robotA.set(0.23996984505178962,0.0007730583170209229,-0.9707800347383843,0.0,-0.9707803425419265,0.0001910943973852625,-0.2399697689649911,0.0,0.0,0.9999996829318346,0.0007963267107332633,0.1,0.0,0.0,0.0,1.0);
+const object3d_link_1_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Axis2.obj',
+scale: 0.001,
+matrix: htm_link_1_robotA,
+mesh_material: material_link_1_robotA};
+
+const link_1_robotA = {
+theta: 0, 
+d: 0.0, 
+a: 0.365, 
+alpha: 0.0, 
+jointType: 0.0, 
+model3d: object3d_link_1_robotA}; 
+ 
+list_links_robotA.push(link_1_robotA);
+
+const material_link_2_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#df6c25",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_link_2_robotA = new Matrix4(); 
+htm_link_2_robotA.set(0.0007963267107332633,0.9999996829318346,0.0,0.0,-0.0007963264582434141,6.341362302272584e-07,-0.9999996829318346,0.0,-0.9999993658637698,0.0007963264582434141,0.0007963267107332633,0.0,0.0,0.0,0.0,1.0);
+const object3d_link_2_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Axis3.obj',
+scale: 0.001,
+matrix: htm_link_2_robotA,
+mesh_material: material_link_2_robotA};
+
+const link_2_robotA = {
+theta: 0, 
+d: 0.0, 
+a: 0.09, 
+alpha: 1.57, 
+jointType: 0.0, 
+model3d: object3d_link_2_robotA}; 
+ 
+list_links_robotA.push(link_2_robotA);
+
+const material_link_3_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#df6c25",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_link_3_robotA = new Matrix4(); 
+htm_link_3_robotA.set(0.0007963267107332633,0.9999996829318346,0.0,0.0,-0.0007963264582434141,6.341362302272584e-07,-0.9999996829318346,0.0,-0.9999993658637698,0.0007963264582434141,0.0007963267107332633,-0.218,0.0,0.0,0.0,1.0);
+const object3d_link_3_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Axis4.obj',
+scale: 0.001,
+matrix: htm_link_3_robotA,
+mesh_material: material_link_3_robotA};
+
+const link_3_robotA = {
+theta: 0, 
+d: -0.405, 
+a: 0.0, 
+alpha: -1.57, 
+jointType: 0.0, 
+model3d: object3d_link_3_robotA}; 
+ 
+list_links_robotA.push(link_3_robotA);
+
+const material_link_4_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#df6c25",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_link_4_robotA = new Matrix4(); 
+htm_link_4_robotA.set(1.0,0.0,0.0,0.0,0.0,0.0007963267107332633,-0.9999996829318346,0.0,0.0,0.9999996829318346,0.0007963267107332633,0.0,0.0,0.0,0.0,1.0);
+const object3d_link_4_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Axis5.obj',
+scale: 0.001,
+matrix: htm_link_4_robotA,
+mesh_material: material_link_4_robotA};
+
+const link_4_robotA = {
+theta: 0, 
+d: 0.0, 
+a: 0.0, 
+alpha: -1.57, 
+jointType: 0.0, 
+model3d: object3d_link_4_robotA}; 
+ 
+list_links_robotA.push(link_4_robotA);
+
+const material_link_5_robotA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#242526",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.7,
+normalScale: new Vector2(0.5,0.5),
+refractionRatio: 0.98,
+roughness: 0.5,
+clearcoat: 1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+const htm_link_5_robotA = new Matrix4(); 
+htm_link_5_robotA.set(1.0,0.0,0.0,0.0,0.0,0.0007963267107332633,-0.9999996829318346,0.0,0.0,0.9999996829318346,0.0007963267107332633,-0.012,0.0,0.0,0.0,1.0);
+const object3d_link_5_robotA={
+url: 'https://raw.githubusercontent.com/SetpointCapybara/kukakr5/main/models/Axis6.obj',
+scale: 0.001,
+matrix: htm_link_5_robotA,
+mesh_material: material_link_5_robotA};
+
+const link_5_robotA = {
+theta: 0, 
+d: 0.08, 
+a: 0, 
+alpha: 0, 
+jointType: 0.0, 
+model3d: object3d_link_5_robotA}; 
+ 
+list_links_robotA.push(link_5_robotA);
+
+const var_robotA = new Robot(object3d_robotA, list_links_robotA,[[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [1.57, -1.57, 0.0, 0.0, 0.0, 0.0], 0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.43063387, -0.84815502, 4.41227638, 0.01163194, 5.86668819, 3.00612301], 0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.43063387, -0.84815502, 4.41227638, 0.01163194, 5.86668819, 3.00612301], 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.394738683483431, -0.8408515328524436, 4.367592645746772, 0.029781639598167712, 5.812945184055312, 2.94073145017153], 0.20833333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.222737449206581, -0.7710394062188304, 4.324478489437462, 0.16263539069895727, 5.8818354741895815, 2.9643409373576017], 0.4166666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.075214807047237, -0.7163184107667635, 4.262177384192978, 0.2697869613574242, 5.892583939106186, 2.9346925108595574], 0.625], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.927692053588669, -0.6615973740301575, 4.199876231945101, 0.37693861285694996, 5.903332412132025, 2.9050440619931037], 0.8333333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.820051113267139, -0.6155209657074096, 4.178648286656159, 0.5564738768023644, 5.973754802720214, 2.8374751475402964], 1.0416666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.682717290828138, -0.5631963241200261, 4.126100063283904, 0.6790211072654647, 5.997836496836737, 2.7995424425263367], 1.25], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.545383446934194, -0.5108716743582384, 4.073551831702316, 0.8015683568734759, 6.021918194715416, 2.7616097315863493], 1.4583333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.408049587573862, -0.4585470187037053, 4.021003594202804, 0.9241156202826262, 6.045999895306149, 2.7236770163744213], 1.6666666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.270715716533435, -0.40622235859901756, 3.9684553522341215, 1.0466628941142866, 6.070081597945005, 2.685744297936357], 1.875], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.1333818363595585, -0.3538976950144551, 3.9159071067706948, 1.1692101760960079, 6.094163302185424, 2.647811576975561], 2.0833333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.996047948847422, -0.30157302863399127, 3.8633588584994194, 1.2917574646258863, 6.11824500771262, 2.6098788539878783], 2.291666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.880893941962423, -0.2569214085742293, 3.8423995061435354, 1.48175756486051, 6.209049007003752, 2.586593858083821], 2.5], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.8712820505710335, -0.23805720026133578, 3.898929177799554, 1.6600279059825476, 6.36369911255839, 2.543621874323313], 2.7083333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.7439484677314425, -0.1882378199893486, 3.8570102614380115, 1.7946326575669267, 6.404284040662008, 2.5058549471043756], 2.916666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.6166148813880845, -0.13841843834650902, 3.815091343923009, 1.9292374128551504, 6.4448689698823785, 2.4680880188462258], 3.125], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.591869773638881, -0.1156985963215642, 3.8619535398709575, 2.127076728906762, 6.580429196500953, 2.520441318509329], 3.3333333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.469596311878322, -0.06699197719127001, 3.825358373105604, 2.2677488020752845, 6.6278912846709614, 2.4881446351828425], 3.541666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.432145650404608, -0.03736403495167276, 3.832401445343045, 2.4065634888570786, 6.714649264180388, 2.4420485747217726], 3.75], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.312977318712575, 0.010982814477697736, 3.7978239442722175, 2.54937143458102, 6.765212537738398, 2.4084132454047746], 3.9583333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.193808985183188, 0.05932966465248652, 3.7632464426682697, 2.6921793825067932, 6.815775812075999, 2.3747779155691826], 4.166666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.074640650004796, 0.10767651549628027, 3.7286689405858513, 2.8349873324086876, 6.866339087113275, 2.341142585268158], 4.375], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [3.955472313338195, 0.1560233669438442, 3.6940914380716188, 2.977795284094011, 6.916902362782, 2.307507254547085], 4.583333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [3.96847265, 0.18502985, 3.75427012, 3.14593206, 7.07650027, 2.3194198], 4.791666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.43063387, -0.84815502, 4.41227638, 0.01163194, 5.86668819, 3.00612301], 0.20833333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.394738683483431, -0.8408515328524436, 4.367592645746772, 0.029781639598167712, 5.812945184055312, 2.94073145017153], 0.4166666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.222737449206581, -0.7710394062188304, 4.324478489437462, 0.16263539069895727, 5.8818354741895815, 2.9643409373576017], 0.625], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.075214807047237, -0.7163184107667635, 4.262177384192978, 0.2697869613574242, 5.892583939106186, 2.9346925108595574], 0.8333333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.927692053588669, -0.6615973740301575, 4.199876231945101, 0.37693861285694996, 5.903332412132025, 2.9050440619931037], 1.0416666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.820051113267139, -0.6155209657074096, 4.178648286656159, 0.5564738768023644, 5.973754802720214, 2.8374751475402964], 1.25], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.682717290828138, -0.5631963241200261, 4.126100063283904, 0.6790211072654647, 5.997836496836737, 2.7995424425263367], 1.4583333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.545383446934194, -0.5108716743582384, 4.073551831702316, 0.8015683568734759, 6.021918194715416, 2.7616097315863493], 1.6666666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.408049587573862, -0.4585470187037053, 4.021003594202804, 0.9241156202826262, 6.045999895306149, 2.7236770163744213], 1.875], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.270715716533435, -0.40622235859901756, 3.9684553522341215, 1.0466628941142866, 6.070081597945005, 2.685744297936357], 2.0833333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.1333818363595585, -0.3538976950144551, 3.9159071067706948, 1.1692101760960079, 6.094163302185424, 2.647811576975561], 2.291666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.996047948847422, -0.30157302863399127, 3.8633588584994194, 1.2917574646258863, 6.11824500771262, 2.6098788539878783], 2.5], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.880893941962423, -0.2569214085742293, 3.8423995061435354, 1.48175756486051, 6.209049007003752, 2.586593858083821], 2.7083333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.8712820505710335, -0.23805720026133578, 3.898929177799554, 1.6600279059825476, 6.36369911255839, 2.543621874323313], 2.916666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.7439484677314425, -0.1882378199893486, 3.8570102614380115, 1.7946326575669267, 6.404284040662008, 2.5058549471043756], 3.125], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.6166148813880845, -0.13841843834650902, 3.815091343923009, 1.9292374128551504, 6.4448689698823785, 2.4680880188462258], 3.3333333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.591869773638881, -0.1156985963215642, 3.8619535398709575, 2.127076728906762, 6.580429196500953, 2.520441318509329], 3.541666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.469596311878322, -0.06699197719127001, 3.825358373105604, 2.2677488020752845, 6.6278912846709614, 2.4881446351828425], 3.75], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.432145650404608, -0.03736403495167276, 3.832401445343045, 2.4065634888570786, 6.714649264180388, 2.4420485747217726], 3.9583333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.312977318712575, 0.010982814477697736, 3.7978239442722175, 2.54937143458102, 6.765212537738398, 2.4084132454047746], 4.166666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.193808985183188, 0.05932966465248652, 3.7632464426682697, 2.6921793825067932, 6.815775812075999, 2.3747779155691826], 4.375], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.074640650004796, 0.10767651549628027, 3.7286689405858513, 2.8349873324086876, 6.866339087113275, 2.341142585268158], 4.583333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [3.955472313338195, 0.1560233669438442, 3.6940914380716188, 2.977795284094011, 6.916902362782, 2.307507254547085], 4.791666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [3.96847265, 0.18502985, 3.75427012, 3.14593206, 7.07650027, 2.3194198], 5.0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.43063387, -0.84815502, 4.41227638, 0.01163194, 5.86668819, 3.00612301], 0.20833333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.394738683483431, -0.8408515328524436, 4.367592645746772, 0.029781639598167712, 5.812945184055312, 2.94073145017153], 0.4166666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.222737449206581, -0.7710394062188304, 4.324478489437462, 0.16263539069895727, 5.8818354741895815, 2.9643409373576017], 0.625], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [6.075214807047237, -0.7163184107667635, 4.262177384192978, 0.2697869613574242, 5.892583939106186, 2.9346925108595574], 0.8333333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.927692053588669, -0.6615973740301575, 4.199876231945101, 0.37693861285694996, 5.903332412132025, 2.9050440619931037], 1.0416666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.820051113267139, -0.6155209657074096, 4.178648286656159, 0.5564738768023644, 5.973754802720214, 2.8374751475402964], 1.25], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.682717290828138, -0.5631963241200261, 4.126100063283904, 0.6790211072654647, 5.997836496836737, 2.7995424425263367], 1.4583333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.545383446934194, -0.5108716743582384, 4.073551831702316, 0.8015683568734759, 6.021918194715416, 2.7616097315863493], 1.6666666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.408049587573862, -0.4585470187037053, 4.021003594202804, 0.9241156202826262, 6.045999895306149, 2.7236770163744213], 1.875], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.270715716533435, -0.40622235859901756, 3.9684553522341215, 1.0466628941142866, 6.070081597945005, 2.685744297936357], 2.0833333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [5.1333818363595585, -0.3538976950144551, 3.9159071067706948, 1.1692101760960079, 6.094163302185424, 2.647811576975561], 2.291666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.996047948847422, -0.30157302863399127, 3.8633588584994194, 1.2917574646258863, 6.11824500771262, 2.6098788539878783], 2.5], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.880893941962423, -0.2569214085742293, 3.8423995061435354, 1.48175756486051, 6.209049007003752, 2.586593858083821], 2.7083333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.8712820505710335, -0.23805720026133578, 3.898929177799554, 1.6600279059825476, 6.36369911255839, 2.543621874323313], 2.916666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.7439484677314425, -0.1882378199893486, 3.8570102614380115, 1.7946326575669267, 6.404284040662008, 2.5058549471043756], 3.125], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.6166148813880845, -0.13841843834650902, 3.815091343923009, 1.9292374128551504, 6.4448689698823785, 2.4680880188462258], 3.3333333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.591869773638881, -0.1156985963215642, 3.8619535398709575, 2.127076728906762, 6.580429196500953, 2.520441318509329], 3.541666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.469596311878322, -0.06699197719127001, 3.825358373105604, 2.2677488020752845, 6.6278912846709614, 2.4881446351828425], 3.75], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.432145650404608, -0.03736403495167276, 3.832401445343045, 2.4065634888570786, 6.714649264180388, 2.4420485747217726], 3.9583333333333335], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.312977318712575, 0.010982814477697736, 3.7978239442722175, 2.54937143458102, 6.765212537738398, 2.4084132454047746], 4.166666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.193808985183188, 0.05932966465248652, 3.7632464426682697, 2.6921793825067932, 6.815775812075999, 2.3747779155691826], 4.375], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [4.074640650004796, 0.10767651549628027, 3.7286689405858513, 2.8349873324086876, 6.866339087113275, 2.341142585268158], 4.583333333333334], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [3.955472313338195, 0.1560233669438442, 3.6940914380716188, 2.977795284094011, 6.916902362782, 2.307507254547085], 4.791666666666667], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.01, 0.0, 0.0, 1.0, 0.3, 0, 0, 0, 1, [3.96847265, 0.18502985, 3.75427012, 3.14593206, 7.07650027, 2.3194198], 5.0]]);
+    sceneElements.push(var_robotA);
+    const material_goal = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#600d75",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_goal = new Ball('var_goal',0.015,[[0.9999962288696329, -0.0005370912439697229, -0.0026932841492326273, -0.4480938254555087, 0.000527685592074667, 0.999993764572222, -0.003491756662687767, -0.4961409763584014, 0.0026951427473834665, 0.003490322287577293, 0.9999902768806808, 0.9950972785767731, 0, 0, 0, 1, 0]], material_goal);
+		sceneElements.push(var_goal);
+		const material_init = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#32c9bf",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_init = new Ball('var_init',0.015,[[0.9999849192793103, -0.0013750903240645207, 0.005316986040192645, 0.3965996472404067, 0.0013455951168557245, 0.9999837101810899, 0.00554695828755748, 0.04841259636166645, -0.005324526996122101, -0.005539720124976784, 0.9999704800208876, 1.3950578540177567, 0, 0, 0, 1, 0]], material_init);
+		sceneElements.push(var_init);
+		const material_boxA = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#302f2d",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.5,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.3,
+clearcoat: 0.1,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.6,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_boxA = new Box('var_boxA',0.3,0.3,0.3,[[1.0, 0.0, -0.0, 0.0, 0.0, 0.0, -1.0, -0.01, 0.0, 1.0, -0.0, 0.15, 0, 0, 0, 1, 0]], material_boxA);
+		sceneElements.push(var_boxA);
+		const material_obstacle = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#290410",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.8,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.8,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_obstacle = new Ball('var_obstacle',0.2,[[1.0, 0.0, 0.0, 0.3, 0.0, 1.0, 0.0, -0.5, 0.0, 0.0, 1.0, 0.4, 0, 0, 0, 1, 0]], material_obstacle);
+		sceneElements.push(var_obstacle);
+		const material_obstacle2 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#290410",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.8,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.8,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_obstacle2 = new Box('var_obstacle2',0.3,1.3,0.3,[[1.0, 0.0, -0.0, 0.65, 0.0, 0.0, -1.0, 0.2, 0.0, 1.0, -0.0, 0.5, 0, 0, 0, 1, 0]], material_obstacle2);
+		sceneElements.push(var_obstacle2);
+		const material_obstacle3 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#290410",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.8,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.8,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_obstacle3 = new Ball('var_obstacle3',0.2,[[1.0, 0.0, 0.0, -0.2, 0.0, 1.0, 0.0, -0.2, 0.0, 0.0, 1.0, 1.0, 0, 0, 0, 1, 0]], material_obstacle3);
+		sceneElements.push(var_obstacle3);
+		const material_boxLeft = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#290410",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.8,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.8,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_boxLeft = new Box('var_boxLeft',0.3,0.8,0.3,[[1.0, 0.0, -0.0, 0.0, 0.0, 0.0, -1.0, 0.7, 0.0, 1.0, -0.0, 0.5, 0, 0, 0, 1, 0]], material_boxLeft);
+		sceneElements.push(var_boxLeft);
+		const material_boxRight = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#290410",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.8,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.8,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_boxRight = new Box('var_boxRight',2,0.1,2,[[1.0, 0.0, -0.0, -0.5, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, -0.0, 1.6, 0, 0, 0, 1, 0]], material_boxRight);
+		sceneElements.push(var_boxRight);
+		const var_light1 = new PointLight("white", 3,0);
+		var_light1.position.set(1,0,1.5);
+		scene.add(var_light1);
+		const var_light2 = new PointLight("white", 3,0);
+		var_light2.position.set(-1,0,1.5);
+		scene.add(var_light2);
+		const var_light3 = new PointLight("white", 3,0);
+		var_light3.position.set(0,0,1.5);
+		scene.add(var_light3);
+		const var_light4 = new PointLight("white", 3,0);
+		var_light4.position.set(0,0.5,0.5);
+		scene.add(var_light4);
+		const material_ground = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#291c04",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0.5,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 0.6,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.8,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ground = new Box('var_ground',3,0.01,3,[[1.0, 0.0, -0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, -0.0, 0.005, 0, 0, 0, 1, 0]], material_ground);
+		sceneElements.push(var_ground);
+		const material_ball_0 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_0 = new Ball('var_ball_0',0.01,[[0.9999849192793103, -0.0013750903240645207, 0.005316986040192645, 0.3965996472404067, 0.0013455951168557245, 0.9999837101810899, 0.00554695828755748, 0.04841259636166645, -0.005324526996122101, -0.005539720124976784, 0.9999704800208876, 1.3950578540177567, 0, 0, 0, 1, 0]], material_ball_0);
+		sceneElements.push(var_ball_0);
+		const material_ball_1 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_1 = new Ball('var_ball_1',0.01,[[0.9895448886103116, 0.1159777462339667, -0.08573258309239976, 0.37797402994566814, -0.11606567555314763, 0.993233586534602, 0.003975114841406083, 0.032556017058108074, 0.08561350584806741, 0.006017055600583356, 0.9963102542171803, 1.3958498079645463, 0, 0, 0, 1, 0]], material_ball_1);
+		sceneElements.push(var_ball_1);
+		const material_ball_2 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_2 = new Ball('var_ball_2',0.01,[[0.9260543335691147, 0.3768984483159642, 0.019259567359647654, 0.4171498358268445, -0.37734802274339135, 0.9239811800486498, 0.06218720646208178, -0.031029200644214053, 0.005642783844469401, -0.06485629169882431, 0.997878660167438, 1.3763536994460832, 0, 0, 0, 1, 0]], material_ball_2);
+		sceneElements.push(var_ball_2);
+		const material_ball_3 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_3 = new Ball('var_ball_3',0.01,[[0.7881134389573735, 0.6137253302633376, 0.047100173332367025, 0.42124963209110994, -0.6151835458417074, 0.7827933479105291, 0.09372181919195187, -0.09145644307382511, 0.020649752066451747, -0.10283867686907493, 0.9944836822589961, 1.3619760683692221, 0, 0, 0, 1, 0]], material_ball_3);
+		sceneElements.push(var_ball_3);
+		const material_ball_4 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_4 = new Ball('var_ball_4',0.01,[[0.5903409809719224, 0.8025290306005124, 0.08628256619103346, 0.41578113440132086, -0.8061157231086449, 0.5807831859098399, 0.11343867030886282, -0.1536090655259396, 0.04092636243467783, -0.13652122914703899, 0.9897913855202252, 1.3467537455516818, 0, 0, 0, 1, 0]], material_ball_4);
+		sceneElements.push(var_ball_4);
+		const material_ball_5 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_5 = new Ball('var_ball_5',0.01,[[0.2791443559035919, 0.9369892768316166, 0.21007028269065706, 0.4249433298526827, -0.9601561337687303, 0.2693114442176172, 0.07464278129668697, -0.20874534596527308, 0.01336515444925921, -0.22253638155588198, 0.9748327710589968, 1.3301028548809108, 0, 0, 0, 1, 0]], material_ball_5);
+		sceneElements.push(var_ball_5);
+		const material_ball_6 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_6 = new Ball('var_ball_6',0.01,[[-0.007747221114958236, 0.9657552943070576, 0.25933895211264424, 0.40570546385237016, -0.9991838754187877, -0.017757841156358256, 0.03628005210246928, -0.271697552075291, 0.039642952312968334, -0.2588462296332594, 0.9651046915939006, 1.313468576117397, 0, 0, 0, 1, 0]], material_ball_6);
+		sceneElements.push(var_ball_6);
+		const material_ball_7 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_7 = new Ball('var_ball_7',0.01,[[-0.29311680223840475, 0.9090377851544242, 0.29619730823738205, 0.3759756178007413, -0.9533700757785416, -0.30120130857462013, -0.01905965170075268, -0.3328359636654843, 0.07188907326951244, -0.28797235435797547, 0.954936586517647, 1.2962656647459687, 0, 0, 0, 1, 0]], material_ball_7);
+		sceneElements.push(var_ball_7);
+		const material_ball_8 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_8 = new Ball('var_ball_8',0.01,[[-0.5521415616051935, 0.7715610453003713, 0.3159640000430063, 0.3359064560351729, -0.8266277835617557, -0.5560220895155706, -0.08675219544494504, -0.39020605460572144, 0.10874834891600628, -0.30908411370650785, 0.9447967015513471, 1.2785764939678688, 0, 0, 0, 1, 0]], material_ball_8);
+		sceneElements.push(var_ball_8);
+		const material_ball_9 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_9 = new Ball('var_ball_9',0.01,[[-0.7621748582686274, 0.5652232515216067, 0.31561394354898265, 0.28605546060145054, -0.6300536535081603, -0.7596684473718702, -0.16104733393829135, -0.44186366202169736, 0.14873425672728166, -0.3215999471501122, 0.9351211658757536, 1.2604822046257995, 0, 0, 0, 1, 0]], material_ball_9);
+		sceneElements.push(var_ball_9);
+		const material_ball_10 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_10 = new Ball('var_ball_10',0.01,[[-0.9047925980598192, 0.30807132406489746, 0.2940109075953874, 0.2273830186313414, -0.38098125819085915, -0.8940548499585288, -0.23562513909373697, -0.48596705316133637, 0.19027252929278177, -0.32520452726635535, 0.9263036111567275, 1.2420617482046188, 0, 0, 0, 1, 0]], material_ball_10);
+		sceneElements.push(var_ball_10);
+		const material_ball_11 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_11 = new Ball('var_ball_11',0.01,[[-0.9674700674219915, 0.0227182106645194, 0.251963393267137, 0.16122801162404643, -0.1014634854617929, -0.9471929817654623, -0.3041884554222884, -0.5208675730632248, 0.23174734035244487, -0.3198583095660569, 0.918685926767746, 1.2233910173754747, 0, 0, 0, 1, 0]], material_ball_11);
+		sceneElements.push(var_ball_11);
+		const material_ball_12 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_12 = new Ball('var_ball_12',0.01,[[-0.9421829486305643, -0.30331419200230114, 0.1424492619840714, 0.09800846816108025, 0.22395532573525262, -0.8861742071644404, -0.4056344248597405, -0.5558660922170175, 0.2492695396245445, -0.3502795676120244, 0.9028670561765453, 1.2043789170711177, 0, 0, 0, 1, 0]], material_ball_12);
+		sceneElements.push(var_ball_12);
+		const material_ball_13 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_13 = new Ball('var_ball_13',0.01,[[-0.8531488689808453, -0.5216576473227346, -0.0032103498896342616, 0.08647338691926662, 0.4541706102293135, -0.7397209832346493, -0.4965298820476938, -0.5954270626945727, 0.2566438469175473, -0.4250719538526073, 0.8680136922233943, 1.1867876885289503, 0, 0, 0, 1, 0]], material_ball_13);
+		sceneElements.push(var_ball_13);
+		const material_ball_14 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_14 = new Ball('var_ball_14',0.01,[[-0.6690521134273983, -0.7358325473622758, -0.10449752035658832, 0.008604295914141502, 0.6815700138866774, -0.5513968138736065, -0.4810653488046606, -0.6077548927556777, 0.2963639412763401, -0.39308016471501006, 0.870434603183246, 1.1682277318918333, 0, 0, 0, 1, 0]], material_ball_14);
+		sceneElements.push(var_ball_14);
+		const material_ball_15 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_15 = new Ball('var_ball_15',0.01,[[-0.4250681305080318, -0.8837561305618604, -0.19568389336052838, -0.07041544835285296, 0.8437378898773085, -0.3085731687467531, -0.439191271219015, -0.6080805022784642, 0.3277551793821015, -0.3517921278595013, 0.876823152730521, 1.1497910250353192, 0, 0, 0, 1, 0]], material_ball_15);
+		sceneElements.push(var_ball_15);
+		const material_ball_16 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_16 = new Ball('var_ball_16',0.01,[[-0.24478005525880375, -0.9222087572551141, -0.29935552874379195, -0.09599135398794739, 0.9156758637691536, -0.11836690768125119, -0.38409242074869554, -0.630094241858609, 0.31877960577507425, -0.3681307963318967, 0.8734181585780846, 1.1313634959103935, 0, 0, 0, 1, 0]], material_ball_16);
+		sceneElements.push(var_ball_16);
+		const material_ball_17 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_17 = new Ball('var_ball_17',0.01,[[0.04526989405845655, -0.938448589937708, -0.3424396015881687, -0.1722757277303559, 0.9432923445251902, 0.1530032485419464, -0.29460067667230727, -0.6158326729723308, 0.328861961090221, -0.30968411321787076, 0.892157811470793, 1.1132407512984013, 0, 0, 0, 1, 0]], material_ball_17);
+		sceneElements.push(var_ball_17);
+		const material_ball_18 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_18 = new Ball('var_ball_18',0.01,[[0.2728942309904643, -0.8934429128268022, -0.35677513956507934, -0.19911328698996758, 0.9062536941018249, 0.36319126127559875, -0.21632463951162714, -0.6176536466097141, 0.3228513289718951, -0.2642950420507324, 0.9087987401666459, 1.0976190933139651, 0, 0, 0, 1, 0]], material_ball_18);
+		sceneElements.push(var_ball_18);
+		const material_ball_19 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_19 = new Ball('var_ball_19',0.01,[[0.536802013047136, -0.7735640527663291, -0.3368118986263315, -0.268574957390254, 0.7886157211019258, 0.601925592484359, -0.12558194752130164, -0.5909073433593018, 0.29988138191530306, -0.1982025160790986, 0.9331596430410409, 1.0794828365249989, 0, 0, 0, 1, 0]], material_ball_19);
+		sceneElements.push(var_ball_19);
+		const material_ball_20 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_20 = new Ball('var_ball_20',0.01,[[0.7539926076911082, -0.5909190133723627, -0.2868969626576684, -0.3329572032958577, 0.6036685199672879, 0.7955341095353677, -0.05205572558589179, -0.5561751600715389, 0.25899703771986754, -0.13394103255090556, 0.9565460439788201, 1.0612071104625571, 0, 0, 0, 1, 0]], material_ball_20);
+		sceneElements.push(var_ball_20);
+		const material_ball_21 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_21 = new Ball('var_ball_21',0.01,[[0.907362990315359, -0.3617875025024704, -0.21401450146893033, -0.3915102507239006, 0.3693695128563068, 0.9292697547247217, -0.004887323004446756, -0.5146230554678762, 0.20064537567126828, -0.07461585613581229, 0.9768182570134814, 1.0426624265970612, 0, 0, 0, 1, 0]], material_ball_21);
+		sceneElements.push(var_ball_21);
+		const material_ball_22 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_22 = new Ball('var_ball_22',0.01,[[0.9861616077542328, -0.10559925368371698, -0.12780485520131302, -0.4437740925375747, 0.10768041981847071, 0.9941404940408216, 0.00946600739428819, -0.4673913606175171, 0.12605637857444765, -0.023097093533881015, 0.991754159906064, 1.0237125966445504, 0, 0, 0, 1, 0]], material_ball_22);
+		sceneElements.push(var_ball_22);
+		const material_ball_23 = new MeshPhysicalMaterial({
+opacity: 1,
+transparent: false,
+aoMapIntensity: 1,
+bumpScale: 1,
+color: "#d15706",
+emissive: "black",
+emissiveIntensity: 1,
+envMapIntensity: 1,
+flatShading: false,
+lightMapIntensity: 1,
+metalness: 0,
+normalScale: new Vector2(1,1),
+refractionRatio: 0.98,
+roughness: 1,
+clearcoat: 0,
+clearcoatNormalScale: new Vector2(1,1),
+clearcoatRoughness: 0,
+ior: 1.5,
+reflectivity: 0.5,
+sheen: 0,
+sheenRoughness: 1,
+sheenColor: "white",
+specularIntensity: 0,
+specularColor: "white",
+transmission: 0,
+});
+
+
+const var_ball_23 = new Ball('var_ball_23',0.01,[[0.9999962288696329, -0.0005370912439697229, -0.0026932841492326273, -0.4480938254555087, 0.000527685592074667, 0.999993764572222, -0.003491756662687767, -0.4961409763584014, 0.0026951427473834665, 0.003490322287577293, 0.9999902768806808, 0.9950972785767731, 0, 0, 0, 1, 0]], material_ball_23);
+		sceneElements.push(var_ball_23);
+		//USER INPUT GOES HERE
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    
+
+// add stuff to the scene
+for(let i = 0; i < sceneElements.length; i++){
+	scene.add(sceneElements[i].shape);
+}
+
+
+//------------------------------------------------------------
+
+//Wait until all objects loaded
+
+var loadedAll = false;
+
+
+//Get starting ms
+var startMs =  elapsedMs()
+
+
+//-------------------- THE ANIMATION LOOP -------------------
+renderer.setAnimationLoop(() => {
+
+
+	loadedAll = true;
+
+	for(let i = 0; i < sceneElements.length; i++){
+		loadedAll = loadedAll && sceneElements[i].hasLoaded();
+	}
+
+	if(!loadedAll)
+	{
+		startMs =  elapsedMs()
+	}
+
+
+
+	//MAGIC HAPPENS HERE!!!
+	for(let i = 0; i < sceneElements.length; i++){
+		sceneElements[i].nextFrame();
+	}
+
+
+
+	renderer.render(scene, camera);
+});
+//------------------------------------------------------------
+
+ </script>
